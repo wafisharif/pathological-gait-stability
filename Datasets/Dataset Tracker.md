@@ -270,3 +270,11 @@ Next Verification Steps
 4. Inspect the diabetes Pedar / gait files to determine whether usable stride or pressure features can be extracted.
 5. Identify the overlapping features across all datasets.
 6. Decide whether the final population set should include all six groups or only the cleanest four.
+
+Potential Stability Metrics
+
+- Lyapunov Exponents
+- Floquet Multipliers
+- Basin of Support
+- Total Body Angular Momentum
+- Traditional locomotion metrics
