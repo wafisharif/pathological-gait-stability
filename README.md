@@ -16,4 +16,4 @@ Candidate Populations
 - Healthy controls
 - Parkinson's disease
 - Stroke
-- Diabetic neuropathy (pending data availability)
+- ALS
