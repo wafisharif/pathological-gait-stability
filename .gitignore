@@ -11,4 +11,6 @@ mujoco_env/
 
 .env
 
-*.log
+*.logCode/controllers/imitation_reward/training_debug/
+Results/training_debug/
+baselines_DEPRL/

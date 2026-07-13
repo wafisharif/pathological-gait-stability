@@ -1,0 +1,5 @@
+label,target_population,steps_survived,n_strikes,distance_m,double_support_pct,right_stance_pct,left_stance_pct,mean_stride_time_s
+ALS Controller v1,ALS,1000,41,13.794,16.19,49.28,61.96,0.41
+Simulated Healthy (0.85x),Healthy,1000,39,13.821,4.43,44.54,55.67,0.503
+ALS Controller v1,ALS,1000,41,13.794,16.19,49.28,61.96,0.41
+ALS Controller v1,ALS,1000,41,13.794,16.19,49.28,61.96,0.41

@@ -1,0 +1,6 @@
+controller_type,param_name,param_value,side,steps_survived,total_reward
+global_strength_weakness,strength_factor,1.0,both,116,594.2515871539619
+global_strength_weakness,strength_factor,0.8,both,1000,15320.031926004567
+global_strength_weakness,strength_factor,0.6,both,1000,16442.055201001334
+global_strength_weakness,strength_factor,0.4,both,82,1012.4508041792368
+global_strength_weakness,strength_factor,0.2,both,35,404.6283772703245

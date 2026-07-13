@@ -1,0 +1,9 @@
+combo,direction,threshold_desc,clean_threshold_N,pct_BW
+Healthy (0.85 strength),Sagittal,"Recovers <=400N, fails >=500N",450,~55-60%
+Healthy (0.85 strength),Lateral,"Recovers <=550N, fails >=600N",575,~70-75%
+ALS-inspired (0.6 strength),Sagittal,"Non-monotonic (recovers at 400,500,600; fails at 550,650,700,800)",,
+ALS-inspired (0.6 strength),Lateral,Fails at all tested levels >=400N,<400,<54%
+Stroke-inspired (0.6 paretic),Sagittal,"Recovers <=250N, fails >=300N",275,~34-40%
+Stroke-inspired (0.6 paretic),Lateral,"Non-monotonic, intermittent failures from 150N",,
+Feedback-delay-inspired (jitter=1.0),Sagittal,Recovery rate declines smoothly 0.29->0.07 across 400-800N,,
+Feedback-delay-inspired (jitter=1.0),Lateral,Recovery rate declines smoothly 0.13->0.00 across 400-800N,,
