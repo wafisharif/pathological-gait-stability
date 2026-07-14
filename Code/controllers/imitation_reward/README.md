@@ -4,7 +4,7 @@ This adds a new, real-human-data-based reward to our MyoLeg walking policy's tra
 
 ## Background
 
-We confirmed by reading the environment's source code (`myosuite/envs/myo/myobase/walk_v0.py`) that the existing reward has no real human reference data anywhere in it -- every term is synthetic (a hand-written cosine wave for hip rhythm, a "don't rotate away from your start pose" term, etc.). This matches what the "Natural and Robust Walking" paper (Schumacher et al., 2023) found independently.
+We confirmed by reading the environment's source code (`myosuite/envs/myo/myobase/walk_v0.py`) that the existing reward has no real human reference data anywhere in it -- every term is synthetic (a hand-written cosine wave for hip rhythm, a "don't rotate away from your start pose" term, etc.). This matches what the "Natural and Robust Walking" paper (Schumacher et al., 2023, arXiv:2309.02976) found independently.
 
 We built real, phase-indexed reference curves for hip, knee, ankle, and pelvis angle from 30 real able-bodied subjects in the full-body motion capture dataset (van Criekinge et al., 2023), then measured how our simulation's own joint-angle values relate to those real curves:
 
@@ -15,7 +15,29 @@ We built real, phase-indexed reference curves for hip, knee, ankle, and pelvis a
 | Knee    | 0.435 (weak)                     | scale 2.40, offset +17.86     | Low (0.5)     |
 | Ankle   | 0.262 (very weak)                | scale 2.86, offset -25.71     | Low (0.5)     |
 
-Hip and pelvis get a strong, confident reward weight since their real-vs-sim shape match is trustworthy; knee and ankle get a much lower weight, since forcing them toward a poorly-correlated target risks fighting the training process rather than helping it.
+Per Miles's approved decision: hip and pelvis get a strong, confident reward weight since their real-vs-sim shape match is trustworthy; knee and ankle get a much lower weight.
+
+## Effort/pain cost function (added after initial imitation reward)
+
+We measured that our simulated muscle activation runs 1.4x-3.2x higher on average than real EMG data (6 leg muscles compared against 30 real able-bodied subjects). Literature research (Schumacher, Geijtenbeek, Caggiano, Kumar, Schmitt, Martius, Haeufle, 2023, "Natural and Robust Walking using RL without Demonstrations in High-Dimensional Musculoskeletal Models," arXiv:2309.02976 -- the direct follow-up to DEP-RL by the same authors, applied to this exact MyoLeg model) explicitly documents this as a known DEP-RL failure mode ("large co-contraction levels"), and provides the exact cost function and coefficients used to fix it:
+
+    c_effort = alpha(t) * a^3 + w1*(u - u_prev)^2 + w2*N_active
+    c_pain   = w3 * joint_limit_violations + w4 * excess_GRF
+
+Using their exact reported values (Table IV(d)): w1=0.097, w2=1.579 (15% activation = "active"), w3=0.131, w4=0.073, GRF threshold = 1.2x body weight.
+
+We also directly investigated whether a real EMG-CORRELATION reward term (matching muscle timing directly, the way we did for joint angles) would be worthwhile, and found real, quantitative evidence that it wouldn't reliably work: published state-of-the-art imitation-learning-specific systems (KINESIS, arXiv:2503.14637; MuscleMimic, arXiv:2603.25544) only achieve modest EMG correlations (0-0.6) due to muscle redundancy, and non-imitation baselines like DEP-RL show substantially weaker alignment than that. We deliberately did not build a direct EMG-matching term for this reason.
+
+### Known adaptations from the paper's exact method (documented, not silent)
+
+- The paper's joint-limit pain term uses MuJoCo's internal constraint torque, which we judged too risky to extract without extensive separate verification. We substitute a directly-verifiable proxy: penalizing joint-angle proximity to its known range limit.
+- The paper's effort-cubed term uses an ADAPTIVE weight alpha(t) that increases based on training performance relative to a threshold (theta=1000) tuned to their specific reward scale. Our reward combines additional terms at a different scale, so this threshold cannot be safely copied. We use a constant placeholder weight instead. Recalibrating this adaptive schedule to our reward's actual scale (using real training-return data once available) is a well-defined follow-up, not yet done.
+
+### Bugs found and fixed during local verification (documented for transparency)
+
+- `act_mag` (inherited from the original environment) had shape (1,1) instead of a scalar, causing a "setting an array element with a sequence" crash when summed with other terms -- fixed by explicit flattening.
+- `active_muscle_count` and `grf_pain` were initially implemented as RAW cumulative counts/forces per episode (unnormalized), causing them to dominate the total reward by roughly 10-20x versus every other term once real walking behavior developed (confirmed via direct per-episode reward-component logging, not assumption). Fixed by normalizing to a 0-1 fraction of muscles (for active count) and to body-weight-relative force (for GRF pain), consistent with how force is scaled elsewhere in this project's perturbation-testing work.
+- Both fixes were verified against real, multi-epoch local training runs (via the actual `deprl.main` command, not just isolated environment stepping) before this handoff, confirming stable, bounded episode scores (-270 to +260) across 5 full epochs.
 
 ## What's in this folder
 
