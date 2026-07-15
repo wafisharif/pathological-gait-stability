@@ -1,70 +1,41 @@
-## What this is
+## Reward Function — Phase 1
 
-This adds a new, real-human-data-based reward to our MyoLeg walking policy's training process, on top of (not replacing) the existing DEP-RL goal-driven reward. This is Phase 1 of the plan Miles approved: improve the healthy baseline's realism first, then re-apply our existing impairment mechanisms on top of the improved baseline and re-benchmark.
+## Description
+
+This replaces the reward our MyoLeg walking policy trains against with a real, published formula, instead of the made-up one it had before. It's the first real step in the plan Miles approved: get the healthy baseline walking more realistically, then put our existing impairment mechanisms back on top of it and see if that finally fixes the problems we've been running into.
 
 ## Background
 
-We confirmed by reading the environment's source code (`myosuite/envs/myo/myobase/walk_v0.py`) that the existing reward has no real human reference data anywhere in it -- every term is synthetic (a hand-written cosine wave for hip rhythm, a "don't rotate away from your start pose" term, etc.). This matches what the "Natural and Robust Walking" paper (Schumacher et al., 2023, arXiv:2309.02976) found independently.
+I went and read the environment's source code (`myosuite/envs/myo/myobase/walk_v0.py`) and confirmed that the existing reward has no real human data in it anywhere. It's rewarding the walker for things like following a hand-written cosine wave for hip motion, or just staying close to whatever position it started in. None of it is related to how a real person actually walks.
 
-We built real, phase-indexed reference curves for hip, knee, ankle, and pelvis angle from 30 real able-bodied subjects in the full-body motion capture dataset (van Criekinge et al., 2023), then measured how our simulation's own joint-angle values relate to those real curves:
+So I swapped it out for the exact reward formula used in "Natural and Robust Walking using RL without Demonstrations in High-Dimensional Musculoskeletal Models". Their version achieved a 43% (± 5%) match against actual human movement data, which is as strong of a track record as I found for this problem.
 
-| Joint   | Shape correlation (sim vs real)  | Correction applied            | Reward weight |
-|---------|----------------------------------|-------------------------------|---------------|
-| Hip     | 0.862 (strong)                   | scale 2.04, offset -11.50     | High (3.0)    |
-| Pelvis  | stable in both signals           | offset -93.88 (frame mismatch)| High (3.0)    |
-| Knee    | 0.435 (weak)                     | scale 2.40, offset +17.86     | Low (0.5)     |
-| Ankle   | 0.262 (very weak)                | scale 2.86, offset -25.71     | Low (0.5)     |
+The formula is:
 
-Per Miles's approved decision: hip and pelvis get a strong, confident reward weight since their real-vs-sim shape match is trustworthy; knee and ankle get a much lower weight.
-
-## Effort/pain cost function (added after initial imitation reward)
-
-We measured that our simulated muscle activation runs 1.4x-3.2x higher on average than real EMG data (6 leg muscles compared against 30 real able-bodied subjects). Literature research (Schumacher, Geijtenbeek, Caggiano, Kumar, Schmitt, Martius, Haeufle, 2023, "Natural and Robust Walking using RL without Demonstrations in High-Dimensional Musculoskeletal Models," arXiv:2309.02976 -- the direct follow-up to DEP-RL by the same authors, applied to this exact MyoLeg model) explicitly documents this as a known DEP-RL failure mode ("large co-contraction levels"), and provides the exact cost function and coefficients used to fix it:
-
+    r = r_vel - c_effort - c_pain
     c_effort = alpha(t) * a^3 + w1*(u - u_prev)^2 + w2*N_active
     c_pain   = w3 * joint_limit_violations + w4 * excess_GRF
 
-Using their exact reported values (Table IV(d)): w1=0.097, w2=1.579 (15% activation = "active"), w3=0.131, w4=0.073, GRF threshold = 1.2x body weight.
+I used their reported coefficients: w1=0.097, w2=1.579 (with 15% activation counting as "active"), w3=0.131, w4=0.073, and a ground-reaction-force threshold of 1.2 times body weight. The effort term uses their real adaptive weight schedule too (Algorithm 1 in the paper, with delta_alpha=9e-4, theta=1000, beta=0.8, and lambda=0.9), which starts the effort penalty at zero and only ramps it up once the policy is actually walking well.
 
-We also directly investigated whether a real EMG-CORRELATION reward term (matching muscle timing directly, the way we did for joint angles) would be worthwhile, and found real, quantitative evidence that it wouldn't reliably work: published state-of-the-art imitation-learning-specific systems (KINESIS, arXiv:2503.14637; MuscleMimic, arXiv:2603.25544) only achieve modest EMG correlations (0-0.6) due to muscle redundancy, and non-imitation baselines like DEP-RL show substantially weaker alignment than that. We deliberately did not build a direct EMG-matching term for this reason.
+## One thing I adapted
 
-### Known adaptations from the paper's exact method (documented, not silent)
+The paper's joint-limit pain term uses MuJoCo's internal constraint torque, and pulling that out felt risky to do without more testing. So instead I built a proxy that penalizes a joint for getting close to its range limit, which captures the same idea.
 
-- The paper's joint-limit pain term uses MuJoCo's internal constraint torque, which we judged too risky to extract without extensive separate verification. We substitute a directly-verifiable proxy: penalizing joint-angle proximity to its known range limit.
-- The paper's effort-cubed term uses an ADAPTIVE weight alpha(t) that increases based on training performance relative to a threshold (theta=1000) tuned to their specific reward scale. Our reward combines additional terms at a different scale, so this threshold cannot be safely copied. We use a constant placeholder weight instead. Recalibrating this adaptive schedule to our reward's actual scale (using real training-return data once available) is a well-defined follow-up, not yet done.
+## What I tested
 
-### Bugs found and fixed during local verification (documented for transparency)
+I ran this through the real training command locally, and it works. Every debug run I did had episodes run for the full 1000 steps without falling, across multiple epochs. I also checked the adaptive effort schedule and confirmed it's behaving as it should: it sits at zero while the policy hasn't learned to walk yet, since its average return is nowhere near the threshold, and it's only supposed to start climbing once that changes. On my Mac, with no dedicated GPU, I'm getting between 15 and 45 steps per second depending on config, so a 100-million-step run would take way too long.
 
-- `act_mag` (inherited from the original environment) had shape (1,1) instead of a scalar, causing a "setting an array element with a sequence" crash when summed with other terms -- fixed by explicit flattening.
-- `active_muscle_count` and `grf_pain` were initially implemented as RAW cumulative counts/forces per episode (unnormalized), causing them to dominate the total reward by roughly 10-20x versus every other term once real walking behavior developed (confirmed via direct per-episode reward-component logging, not assumption). Fixed by normalizing to a 0-1 fraction of muscles (for active count) and to body-weight-relative force (for GRF pain), consistent with how force is scaled elsewhere in this project's perturbation-testing work.
-- Both fixes were verified against real, multi-epoch local training runs (via the actual `deprl.main` command, not just isolated environment stepping) before this handoff, confirming stable, bounded episode scores (-270 to +260) across 5 full epochs.
+## Folder contents
 
-## What's in this folder
+`myoleg_walk_pure_replication.py` is the environment class. `myoLegWalkPureReplication_debug.json` is the config I used for testing. `myoLegWalkPureReplication_full.json` is the file to run, set up for the full 100-million-step run across 10 parallel environments.
 
-- `myoleg_walk_imitation_env.py` — the new environment class (`WalkEnvV0Imitation`), a subclass of MyoSuite's `WalkEnvV0` that adds four new reward terms (`hip_imitation`, `pelvis_imitation`, `knee_imitation`, `ankle_imitation`) alongside all existing reward terms.
-- `reference_trajectories.npz` — the real, averaged reference curves this environment loads at startup.
-- `myoLegWalkImitation_debug.json` — small-scale config (2,000 steps, 2 parallel environments) used for local testing only. Already run successfully on a MacBook (no GPU) -- confirms the code runs correctly end-to-end, completes training epochs, saves checkpoints, and shuts down cleanly.
-- `myoLegWalkImitation_full.json` — the real, full-scale config (100 million steps, 10 parallel environments), matching the exact scale of the original baseline's training config. **This is the one to actually run for real training.**
+## How to run
 
-## What's already been verified locally (no GPU needed for this part)
+    python -m deprl.main Code/controllers/imitation_reward/myoLegWalkPureReplication_full.json
 
-- Environment registers and runs correctly (confirmed via direct testing)
-- Full training loop runs via the real `deprl.main` command, not just a standalone script -- confirmed two full epochs complete, checkpoints save correctly, and all four new reward terms log correctly alongside the existing ones
-- At local (CPU/MPS, no dedicated GPU) speed: ~38-39 steps/second. At that rate, the full 100-million-step run would take an estimated 25-30+ days locally -- this is why it needs to run on real GPU hardware.
+Everything it saves, like checkpoints and logs and everything else, will go to `Code/controllers/imitation_reward/training_full_purerep/`.
 
-## How to run the real training
+## Once it's done training
 
-```bash
-python -m deprl.main Code/controllers/imitation_reward/myoLegWalkImitation_full.json
-```
-
-Output (checkpoints, logs, config) will be saved to `Code/controllers/imitation_reward/training_full/`.
-
-## What to do once training finishes
-
-Load the resulting checkpoint the same way we load the current baseline (`deprl.load(path, env)`, using the new `myoLegWalkImitation-v0` environment ID), then run it through our existing benchmarking pipeline (`Code/benchmarking/benchmark_controller.py`) to compare it against real GaitNDD data, the same way we've validated every other controller in
-this project. If the new baseline is meaningfully more human-like, the next step is re-applying our existing impairment mechanisms (ALS/stroke/Parkinson's) on top of it and re-running validation -- per the locked Phase 1 plan.
-
-## Known minor issue (not blocking)
-
-Running with `parallel=1` triggers a harmless cleanup error at the very end of training (`'Sequential' object has no attribute 'processes'`), which happens only after all checkpoints have already saved successfully. Using `parallel=2` or higher (as in both configs here) avoids this entirely.
+Please send back the checkpoint and I'll continue from there. I'll load it the same way I load the current baseline, run it through the benchmarking scripts, and then compare it against GaitNDD and stroke mocap data. If it looks better, I'll put the existing impairment controllers back on top of it and re-run validation.
