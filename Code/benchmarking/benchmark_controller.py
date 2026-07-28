@@ -1,12 +1,3 @@
-"""
-Standardized benchmarking script for all impairment controllers.
-Runs any controller configuration through the full gait-signature
-measurement suite and compares against real GaitNDD reference values.
-Usage:
-    python Code/benchmarking/benchmark_controller.py --controller als
-    python Code/benchmarking/benchmark_controller.py --controller stroke
-    python Code/benchmarking/benchmark_controller.py --controller healthy
-"""
 from myosuite.utils import gym
 import deprl
 import numpy as np
@@ -15,7 +6,7 @@ import os
 import argparse
 
 # ============================================================
-# REAL GaitNDD REFERENCE VALUES
+# GaitNDD REFERENCE VALUES
 # ============================================================
 REAL = {
     "Healthy": {
@@ -49,9 +40,6 @@ HIP_EXTENSOR_NAMES  = ['glmax', 'semimem', 'semiten', 'bflh']
 
 # ============================================================
 # CONTROLLER CONFIGURATIONS
-# Add new controllers here as they are built and validated.
-# Each entry maps a controller name to a setup function that
-# modifies actuator_gainprm before the episode starts.
 # ============================================================
 def setup_healthy(sim):
     original = sim.model.actuator_gainprm.copy()
