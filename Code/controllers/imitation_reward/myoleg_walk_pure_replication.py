@@ -133,7 +133,7 @@ class WalkEnvV0PureReplication(WalkEnvV0):
         rwd_dict = collections.OrderedDict(
             (
                 ("vel_reward", vel_reward),
-                ("done", 0.0),
+                ("done", self._get_done()),
                 ("cyclic_hip", 0.0),
                 ("ref_rot", 0.0),
                 ("joint_angle_rew", 0.0),
