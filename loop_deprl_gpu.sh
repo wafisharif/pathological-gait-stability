@@ -80,7 +80,7 @@ echo "Environment set up. Starting deprl run..."
 TARGET_STEPS=100000000
 MAX_CHAINS=40   # ~40 * 6h = 240h (~10 days) ceiling before auto-chaining stops on its own
 CHAIN_COUNT=${CHAIN_COUNT:-0}
-CKPT_BASE="Code/controllers/imitation_reward/training_full_purerep"
+CKPT_BASE="Code/controllers/imitation_reward/training_full_parkinsonstier4"
  
 CKPT_DIR=$(find "$CKPT_BASE" -maxdepth 2 -type d -name checkpoints 2>/dev/null | head -1)
  
@@ -106,7 +106,7 @@ else
     sbatch --dependency=afterany:$SLURM_JOB_ID --export=ALL,CHAIN_COUNT=$NEXT_CHAIN "$0"
 fi
  
-"$PYTHON_BIN" -m deprl.main Code/controllers/imitation_reward/myoLegWalkPureReplication_full.json
+"$PYTHON_BIN" -m deprl.main Code/controllers/imitation_reward/myolegParkinsonsTier4_full.json
  
 echo "Script completed!"
  
