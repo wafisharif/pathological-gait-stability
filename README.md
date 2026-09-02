@@ -16,4 +16,8 @@ Candidate Populations
 - Healthy controls
 - Parkinson's disease
 - Stroke
+
+Future Work
 - ALS
+- Diabetic neuropathy
+- TBD
