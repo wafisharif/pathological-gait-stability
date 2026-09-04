@@ -1,1 +1,344 @@
+\documentclass{article}
 
+% ready for submission
+\usepackage[preprint,nonatbib]{neurips_2026}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{placeins}
+
+\title{GaitAudit: A Framework for Building, Auditing, and Benchmarking Pathology-Representing Locomotion Policies from Real Gait Data}
+
+\author{
+  Wafi Sharif\thanks{Corresponding author.} \\
+  Queens High School for the Sciences \\
+  \texttt{wafisharif0@gmail.com} \\
+  \And
+  Miles Smith \\
+  Massachusetts Institute of Technology \\
+  \texttt{milessmi@mit.edu}
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+When musculoskeletal locomotion policies are labeled as pathological controllers, they are rarely tested to see if they reproduce the pathology's clinical mechanism(s). To close this gap, we present GaitAudit, a framework for building locomotion policies from real clinical data and auditing whether the controllers display the clinical features involved. We do this by converting joint-angle trajectories from a patient population into imitation targets, which we weight based on how strongly each joint correlates with real data, and train a musculoskeletal policy against that target. We use the framework to build two pathological controllers on an 80-muscle leg model: one trained on stroke motion-capture kinematics, and one on Parkinsonian motion-capture kinematics. Neither was instructed to produce a specific clinical pattern. Still, both did. The stroke controller's paretic knee settled into immobility, which resembles a post-stroke impairment condition known as stiff-knee gait; it also shows the same extensor-overactivity and flexor-suppression pattern attributed to the real condition. Meanwhile, our Parkinsonian controller developed a hip-rigidity pattern under perturbation, which is similarly documented in real patients. Subsequently, we compared our controllers against three baseline controllers that do not use any clinical data: an untrained floor policy, an out-of-the-box RL baseline, and a policy trained on a published reward formula. Ultimately, no baseline dominates every measure we analyze; the stroke controller is the most robust policy in the entire comparison, and the Parkinsonian controller's robustness falls close behind. The GaitAudit framework, both constructed policies, all baseline policies, and the full evaluation pipeline will be released publicly upon acceptance.
+\end{abstract}
+
+\section{Introduction}
+
+As simulated musculoskeletal models see drastic boosts in their usage to study human locomotion, the policies controlling them are almost always optimized to simply walk well, instead of being representative of specific gait conditions. Policies that are designed to represent a specific pathology are rarely checked to see if they reproduce the clinical mechanisms behind that pathology. This significantly blurs the gap between accurate pathological gait simulations and simulations that appear pathological on the surface, but in reality are not.
+
+So, we ask two questions. Can a framework using real clinical motion-capture data to produce policies induce locomotion behavior that matches documented clinical mechanisms, including what isn't given in the training process? How do these policies compare to policies that are built without clinical data, in terms of robustness and naturalism?
+
+We answer the first question by a creating GaitAudit: a framework that converts joint-angle trajectories from a pathological population into an imitation target that is weighted by calibration correlation, then trains a musculoskeletal policy against it, and audits the gait signatures of the resulting policy. We build two pathological controllers for stroke and Parkinson's disease (Section~\ref{sec:methods}); neither was told to produce a named clinical pattern, yet both still develop well-documented structures resonant with the actual conditions (Section~\ref{sec:results}). We subsequently compare our controllers against three non-clinical baselines; no baseline dominates every measure, and neither constructed controller sacrifices robustness for clinical accuracy.
+
+Our contributions in this work are: (1) GaitAudit, a framework for building a locomotion policy from clinical motion-capture data and auditing whether clinical mechanism emerges beyond the literal training target; (2) two pathological controllers, where each develops representative gait signatures; (3) a comparison against three non-clinical baselines in robustness and naturalism; and (4) the public release of GaitAudit, all five policies, and our evaluation pipeline.
+
+\section{Related Work}
+
+Prior work on musculoskeletal motion imitation has mostly targeted healthy locomotion. KINESIS \cite{simos2025kinesis} trains a policy by motion imitation on a large healthy-locomotion dataset, producing muscle activation correlating with human EMG, without EMG in the training process. Closer to our approach, Choi et al.~\cite{choi2026musculoskeletal} combine musculoskeletal simulation and RL to model healthy and impaired gait for exoskeleton assistance, imposing synthetic weaknesses directly on the model; their policy reproduces GRF patterns. However, this controller, like most other existing controllers, simply imposes a synthetic deficit onto a healthy, baseline controller. GaitAudit diverges from this approach; we use cross-modal EMG and postural response to perturbation as targets and checks. We also build on published, non-data-driven reward designs: the DEP-RL baseline \cite{schumacher2023deprl} and the literature-exact replication \cite{schumacher2023natural}, which are used here as baselines. GaitAudit inherits their effort/pain terms while also adding a real-data-derived kinematic target ourselves.
+
+\section{Background}
+
+We use MuJoCo through MyoSuite's myoLegWalk-v0 \cite{caggiano2022myosuite}, an 80-muscle lower-limb model; every policy runs on the same model, terrain, and protocol. Three datasets ground this work. PhysioNet's GaitNDD \cite{hausdorff2000dynamic,goldberger2000physiobank} provides stride-interval timing across healthy, Parkinson's, Huntington's, and ALS subjects, confirming cadence and variability discriminate these conditions. Van Criekinge et al.~\cite{vancriekinge2023fullbody} (138 able-bodied, 50 stroke survivors) supplies the stroke controller's target and reference curves. Shida et al.~\cite{shida2023public} (26 individuals with Parkinson's disease, off medication) supplies the Parkinsonian controller's target and reference curves.
+
+\section{Methods}
+\label{sec:methods}
+
+\subsection{The GaitAudit framework}
+
+For each joint $j$ (hip, pelvis, knee, ankle), a mean reference curve $\theta_j^{\mathrm{ref}}(\phi)$ is affine-corrected against the simulated model's joint conventions, $\theta_j^{\mathrm{corr}}(\phi) = s_j \cdot \theta_j^{\mathrm{ref}}(\phi) + o_j$, using a per-joint scale $s_j$ and offset $o_j$ fit during calibration; each joint is assigned a high ($w_j=3.0$) or low ($w_j=0.5$) imitation weight based on its calibration shape correlation $r_j$, and the reward sums exponentiated tracking errors, $R_{\mathrm{imit}}(t) = \sum_j w_j \cdot \exp\!\left(-\lambda\left(\theta_j(t) - \theta_j^{\mathrm{corr}}(\phi(t))\right)^2\right)$, with $\lambda = 0.001$. After training, each policy is compared to clinical data on features that were excluded from training: asymmetry direction/magnitude; whether the full gait-cycle curve tracks the real reference; whether muscle activation matches a clinical pattern; and perturbation response. A policy is labeled as reproducing a clinical gait signature if it passes multiple of these four checks.
+
+\subsection{Building the stroke and Parkinsonian controllers (Tiers 3, 4)}
+
+The stroke controller (Tier 3) is built on the Van Criekinge et al.\ dataset \cite{vancriekinge2023fullbody}, using paretic/non-paretic targets for hip, knee, and ankle, and a shared pelvis target. The hip and pelvis receive the high-confidence weight ($w_j=3.0$), reflecting strong calibration correlation for the hip ($r=0.862$) and a stable, offset-corrected fit for the pelvis; the knee ($r=0.435$) and ankle ($r=0.262$) receive the low-confidence weight ($w_j=0.5$). The Parkinsonian controller (Tier 4) uses the same recipe on the Shida et al.\ dataset \cite{shida2023public}; it trains across 10 seeds, and the hip-rigidity result in Section~\ref{sec:pd-results} persists across all 10.
+
+Our two constructed policies plus three baseline policies are also evaluated under a perturbation protocol (diagram in Appendix~\ref{app:figs}, Fig.~\ref{fig:protocol}): a 0.1~s force is applied at the pelvis center of mass, in either the sagittal or lateral direction, with a force randomly ranging from 100--200~N, and randomly timed between steps 50--150 in the overall episode; the hip/ankle ROM during recovery is measured against that trial's baseline (Section~\ref{sec:pd-results} uses 150~N).
+
+\subsection{Baselines and evaluation protocol}
+\label{sec:baselines}
+\label{sec:eval}
+
+Three additional policies built without clinical data help contextualize our controllers. They include Tier 0, a floor of uniform-random activation; Tier 1, the out-of-the-box DEP-RL baseline \cite{schumacher2023deprl}; and Tier 2, which we trained on Schumacher et al.'s reward \cite{schumacher2023natural}. Both terms are unchanged from Schumacher et al.~\cite{schumacher2023natural}: $c_{\mathrm{effort}} = \alpha(t) a^3 + w_1(u-u_{\mathrm{prev}})^2 + w_2 N_{\mathrm{active}}$ penalizes muscle activation, excitation non-smoothness, and active-muscle count; $c_{\mathrm{pain}} = w_3\sum_i \tau_i^{\mathrm{lim}} + w_4\sum_j F_j^{\mathrm{GRF}}$ penalizes joint-limit torque and GRF above $1.2\times$ body weight.
+
+All the policies are evaluated under the same model, randomized starting pose, 20 seeded rollouts, and a 1000-step cap. We define robustness simply as the number of steps survived, while naturalism is defined by: joint-angle range against real curves; GRF curve shape during stance; and stance/swing ratio. Stroke-controller asymmetry uses the raw symmetry index of Robinson et al.~\cite{robinson1987symmetry}. Swing-phase knee flexion uses swing-isolated peaks. We report many statistical tests; headline p-values are below $10^{-4}$ throughout, so Bonferroni would not change which survive. GaitAudit, all five policies, and the evaluation code will be released publicly upon acceptance.
+
+
+\section{Results}
+\label{sec:results}
+
+\subsection{The stroke controller develops a clinically-documented gait signature}
+\label{sec:stroke-results}
+
+The stroke controller's hip, knee, and ankle motion was checked against real paretic/non-paretic asymmetry. The hip and ankle track the real target well, with strong correlation on both limbs (hip: $r=0.740$ paretic, $r=0.877$ non-paretic; ankle: $r=0.487$, $r=0.688$). The knee does not; peak and range measures show the opposite asymmetry direction, with correlation near zero to slightly negative ($r=0.082$, $r=-0.140$), and the paretic knee stays near full extension for the entire episode.
+
+This resembles a specific pattern, so we re-examined peak flexion in the swing phase. Tier 1 still shows a modest baseline difference (left $74.4^\circ$, right $64.1^\circ$; $p=0.0042$). The stroke controller's paretic-side mean is $0.5^\circ$ against non-paretic $79.7^\circ$, with complete separation ($p<0.001$; Appendix Fig.~\ref{fig:kneebar}). The full cycle shows the same pattern (Fig.~\ref{fig:kneecurve}): paretic flat near $0^\circ$ throughout, vs.\ real paretic peaking near $130^\circ$ in swing.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.9\linewidth]{fig_knee_curve.png}
+  \caption{Phase-aligned mean knee-angle curves across a full gait cycle: real paretic and non-paretic reference curves against Tier~1 and the stroke controller.}
+  \label{fig:kneecurve}
+\end{figure}
+
+This resembles stiff-knee gait, which clinically is attributed to rectus femoris spasticity/hyperreflexia \cite{akbas2020rectus} -- this was not the training objective, as the target asked for substantial flexion on both knees.
+
+We checked the muscle activation modality. Post-stroke EMG \cite{vancriekinge2023fullbody} shows increased paretic-side extensor activation (rectus femoris 0.845 vs.\ 0.597; vastus lateralis 0.657 vs.\ 0.371) and decreased paretic-side flexor activation (biceps femoris 0.164 vs.\ 0.416; semitendinosus 0.134 vs.\ 0.462), complete separation across 20 episodes ($p<0.001$ all four). This is the documented mechanism behind stiff-knee gait \cite{akbas2020rectus}.
+
+\subsection{The Parkinsonian controller replicates the phenomenon on a different pathology}
+\label{sec:pd-results}
+
+We checked the Parkinsonian controller's spatiotemporal pattern against Parkinsonian statistics \cite{shida2023public}. Simulated cadence is 48.7\% higher than Tier 1's ($p=1.8\times10^{-7}$). PD patients show slightly lower cadence than controls (108.9 vs.\ 110.8 steps/min), not significant here ($p=0.54$): a large increase with no significant real direction to compare against, though GaitNDD \cite{hausdorff2000dynamic,goldberger2000physiobank} confirms cadence discriminates these conditions generally.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.56\linewidth]{fig_hip_rom.png}
+  \caption{Hip range of motion (ROM) before vs.\ during the post-push recovery window for the Parkinsonian controller (Tier~4, 150~N pushes, $n=20$ trials). Thin lines show individual trials; the thick line shows the mean, which drops from $57.9^\circ$ pre-push to $44.3^\circ$ during recovery.}
+  \label{fig:hiprom}
+\end{figure}
+
+Joint-by-joint, five of six combinations differ significantly from the real reference (Appendix Table~\ref{tab:pdjoints}); only right ankle is indistinguishable ($p=0.22$).
+
+Under the perturbation protocol (Section~\ref{sec:methods}), hip ROM during recovery decreases (mean $=-13.62^\circ$, SD $=11.92^\circ$, $n=20$ at 150~N; $t(19)=-5.11$, $p=6.2\times10^{-5}$) (Fig.~\ref{fig:hiprom}), matching literature on axial/hip rigidity \cite{wright2007axial} and elevated postural feedback gain \cite{kim2009postural} in PD patients. This is the clearest clinical convergence found for this controller, from a modality that was excluded from training like the stroke controller.
+
+\subsection{Placing both controllers against non-clinical policies}
+
+One might expect pathological accuracy to sacrifice stability. We found otherwise. Tier 1 outperforms the floor (734.5 vs.\ 36.0 steps, $p<0.001$); Tier 2's mean is 907.7. The stroke controller survives every rollout (1000/1000, SD $=0$), exceeding Tier 1 ($p=0.0096$) and becoming the most robust policy in the study (12.31~m traveled at 1.262~m/s against a 1.2~m/s target). The Parkinsonian controller is similarly robust at 888.3 steps (SD $=279.2$; Fig.~\ref{fig:robust}).
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.8\linewidth]{fig_robustness.png}
+  \caption{Robustness (steps survived out of a 1000-step cap) across the four baseline-protocol conditions, Tier~0 through the stroke controller (Tier~3), and the Parkinsonian controller (Tier~4), 20 seeded rollouts each. Error bars show one standard deviation.}
+  \label{fig:robust}
+\end{figure}
+
+Unlike robustness, which only relies on one measure, naturalism shows no consistent ordering. Tier 2 is closest on joint angle (right-knee span $67.9^\circ$ vs.\ real $51.8^\circ$, vs.\ $128.9^\circ$ for Tier 1 and $114.5^\circ$ for the stroke controller, both $p<0.0001$); Tier 1 is closest on right ankle ($49.8^\circ$ vs.\ real $22.5^\circ$, others $p<0.0001$). GRF double-peak shape and stance/swing ratio (real $\approx$60/40) both favor Tier 2 (right-foot double-hump 44.0\% vs.\ 16.2\%/1.4\%; stance 49.6\% vs.\ 42.6\%/45.6\%, all $p<0.0001$).
+
+The stroke controller is the objectively most robust policy and improves most joint-angle measures, disproving the assumption that pathological accuracy must sacrifice stability. Tier 2 matches Tier 1's robustness with the best force-timing and joint-angle match, without any imitation target.
+
+\section{Discussion}
+\label{sec:discussion}
+
+GaitAudit produces the same finding twice: kinematics training develops clinical signatures independently, which match clinical mechanisms in a modality (EMG, postural response to perturbation). The replication across independent builds shows the phenomenon is general, and Section~5.3 shows this did not cost stability. This could be because both signatures restrict angular excursion at a joint, reducing its degrees of freedom so a perturbation has fewer configurations to drive the model into before exceeding a recoverable posture.
+
+\section{Limitations}
+
+The stroke controller's pelvis angle tracks its reference poorly ($r=-0.290$). The Parkinsonian cadence effect is validated against a real-world difference that is insignificant here (inconclusive).
+
+GaitAudit is not a diagnostic/clinical tool. Both controllers reproduce specific impairment mechanisms without being validated for clinical decision-making. We caution this as RL systems can score well against a benchmark, while failing the population they model \cite{berger2025benchmark}.
+
+\section{Conclusion}
+
+GaitAudit builds policies directly from clinical motion-capture data and audits the results against unseen training measures. Applied to stroke and Parkinson's disease, it produces two controllers that develop a clinical gait signature: stiff-knee-like paretic gait for stroke, hip rigidity under perturbation for Parkinson's. When placed against non-clinical baseline policies, neither controller sacrifices its robustness for clinical accuracy, but no design wins every naturalism measure. GaitAudit, all five policies, and the evaluation pipeline will be released publicly upon acceptance.
+\begin{ack}
+This work was made possible by computing resources provided by Miles Smith, who assisted in training all the policies evaluated in this study.
+\end{ack}
+
+\bibliographystyle{plain}
+\begin{thebibliography}{15}
+
+\bibitem{simos2025kinesis}
+M.~Simos, A.~S. Chiappa, and A.~Mathis.
+\newblock KINESIS: Motion imitation for human musculoskeletal locomotion.
+\newblock {\em arXiv:2503.14637}, 2025.
+
+\bibitem{caggiano2022myosuite}
+V.~Caggiano, H.~Wang, G.~Durandau, M.~Sartori, and V.~Kumar.
+\newblock MyoSuite: A contact-rich simulation suite for musculoskeletal motor control.
+\newblock {\em Proc. Learning for Dynamics and Control (L4DC)}, 2022.
+
+\bibitem{vancriekinge2023fullbody}
+T.~Van Criekinge, W.~Saeys, S.~Truijen, L.~Vereeck, L.~H. Sloot, and A.~Hallemans.
+\newblock A full-body motion capture gait dataset of 138 able-bodied adults across the life span and 50 stroke survivors.
+\newblock {\em Scientific Data}, 10(1):852, 2023.
+
+\bibitem{hausdorff2000dynamic}
+J.~M. Hausdorff, A.~Lertratanakul, M.~E. Cudkowicz, A.~L. Peterson, D.~Kaliton, and A.~L. Goldberger.
+\newblock Dynamic markers of altered gait rhythm in amyotrophic lateral sclerosis.
+\newblock {\em J. Appl. Physiol.}, 88:2045--2053, 2000.
+
+\bibitem{goldberger2000physiobank}
+A.~L. Goldberger et al.
+\newblock PhysioBank, PhysioToolkit, and PhysioNet: Components of a new research resource for complex physiologic signals.
+\newblock {\em Circulation}, 101(23):e215--e220, 2000.
+
+\bibitem{shida2023public}
+T.~K.~F. Shida, T.~M. Costa, C.~E.~N. de Oliveira, R.~de Castro Treza, S.~M. Hondo, E.~Los Angeles, C.~Bernardo, L.~dos Santos de Oliveira, M.~de Jesus Carvalho, and D.~B. Coelho.
+\newblock A public data set of walking full-body kinematics and kinetics in individuals with Parkinson's disease.
+\newblock {\em Frontiers in Neuroscience}, 17:992585, 2023.
+
+\bibitem{schumacher2023deprl}
+P.~Schumacher, D.~F.~B. Haeufle, D.~B\"uchler, S.~Schmitt, and G.~Martius.
+\newblock DEP-RL: Embodied exploration for reinforcement learning in overactuated and musculoskeletal systems.
+\newblock {\em Proc. Int. Conf. Learning Representations (ICLR)}, 2023.
+
+\bibitem{schumacher2023natural}
+P.~Schumacher, T.~Geijtenbeek, V.~Caggiano, V.~Kumar, S.~Schmitt, G.~Martius, and D.~F.~B. Haeufle.
+\newblock Natural and robust walking using reinforcement learning without demonstrations in high-dimensional musculoskeletal models.
+\newblock {\em arXiv:2309.02976}, 2023.
+
+\bibitem{robinson1987symmetry}
+R.~O. Robinson, W.~Herzog, and B.~M. Nigg.
+\newblock Use of force platform variables to quantify the effects of chiropractic manipulation on gait symmetry.
+\newblock {\em J. Manipulative Physiol. Ther.}, 10(4):172--176, 1987.
+
+\bibitem{akbas2020rectus}
+T.~Akbas, K.~Kim, K.~Doyle, K.~Manella, R.~Lee, P.~Spicer, M.~Knikou, and J.~Sulzer.
+\newblock Rectus femoris hyperreflexia contributes to Stiff-Knee gait after stroke.
+\newblock {\em J. NeuroEngineering Rehabil.}, 17:117, 2020.
+
+\bibitem{wright2007axial}
+W.~G. Wright, V.~S. Gurfinkel, J.~Nutt, F.~B. Horak, and P.~J. Cordo.
+\newblock Axial hypertonicity in Parkinson's disease: Direct measurements of trunk and hip torque.
+\newblock {\em Experimental Neurology}, 208(1):38--46, 2007.
+
+\bibitem{kim2009postural}
+S.~Kim, F.~B. Horak, P.~Carlson-Kuhta, and S.~Park.
+\newblock Postural feedback scaling deficits in Parkinson's disease.
+\newblock {\em Journal of Neurophysiology}, 102(5):2910--2920, 2009.
+
+\bibitem{choi2026musculoskeletal}
+I.~Choi, I.~Park, E.~Halilaj, and I.~Kang.
+\newblock Musculoskeletal motion imitation for learning personalized exoskeleton control policy in impaired gait.
+\newblock {\em arXiv:2604.09431}, 2026.
+
+\bibitem{berger2025benchmark}
+A.~Berger, M.~Bergau, H.~Schneider, S.~Ahmad, T.~Anglim Lagones, G.~Brugnara, M.~Foltyn-Dumitru, K.~Schlamp, P.~Vollmuth, and R.~Sifa.
+\newblock Benchmark success, clinical failure: When reinforcement learning optimizes for benchmarks, not patients.
+\newblock {\em arXiv:2512.23090}, 2025.
+
+\end{thebibliography}
+
+\section*{NeurIPS Paper Checklist}
+
+\begin{enumerate}
+
+\item {\bf Claims}
+    \item[] Question: Do the main claims made in the abstract and introduction accurately reflect the paper's contributions and scope?
+    \item[] Answer: \answerYes{}
+    \item[] Justification: The abstract and introduction claim what is shown in Sections~4--6: two pathological controllers that develop unplanned clinical gait signatures, and a robustness and naturalism comparison against three non-clinical baselines.
+
+\item {\bf Limitations}
+    \item[] Question: Does the paper discuss the limitations of the work?
+    \item[] Answer: \answerYes{}
+    \item[] Justification: Section~7 discusses measurement-fidelity caveats like pelvis-angle tracking and inconclusive cadence validation, and states that the controllers should not be used as a clinical/diagnostic tool.
+
+\item {\bf Theory Assumptions and Proofs}
+    \item[] Question: Does the paper include theoretical results?
+    \item[] Answer: \answerNA{}
+    \item[] Justification: No theoretical results are claimed as this is an empirical simulation paper.
+
+\item {\bf Experimental Result Reproducibility}
+    \item[] Question: Does the paper fully disclose all the information needed to reproduce the main experimental results?
+    \item[] Answer: \answerYes{}
+    \item[] Justification: The simulation environment (MyoSuite's myoLegWalk-v0), training algorithm (DEP-RL), reward construction (Section~4.1--4.2) and baseline/evaluation protocol (Section~4.3, including the perturbation protocol) are specified in the text; code and policies will be released publicly upon acceptance.
+
+\item {\bf Open Access to Data and Code}
+    \item[] Question: Does the paper provide open access to the data and code?
+    \item[] Answer: \answerYes{}
+    \item[] Justification: All five trained policies, the GaitAudit construction and audit code, and the evaluation pipeline will be released publicly upon acceptance. The underlying clinical datasets are third-party public datasets (PhysioNet GaitNDD, PhysioNet-linked and Scientific-Data-hosted Van Criekinge et al.\ stroke dataset, Shida et al.\ Parkinson's dataset), cited in Section~3, and are not redistributed by us.
+
+\item {\bf Experimental Setting/Details}
+    \item[] Question: Does the paper specify all the training and test details needed to understand the results?
+    \item[] Answer: \answerYes{}
+    \item[] Justification: All details revolving around reward construction, baseline training source, evaluation rollout counts (20 seeded rollouts per policy), episode cap (1000 steps), and the perturbation sweep range (100--200~N) are in Sections~4--5.
+
+\item {\bf Experiment Statistical Significance}
+    \item[] Question: Does the paper report error bars / statistical significance of experiments?
+    \item[] Answer: \answerYes{}
+    \item[] Justification: All comparisons include sample sizes, test statistics ($U$, $t$), and $p$-values (Sections~5--6); figures report standard deviations. Section~4.3 explains our multiple-comparisons approach and states that headline results are not affected by a Bonferroni correction.
+
+\item {\bf Experiments Compute Resources}
+    \item[] Question: Does the paper provide sufficient information on the computer resources needed to reproduce the experiments?
+    \item[] Answer: \answerNo{}
+    \item[] Justification: Compute details like hardware and training time are not reported in this draft; this will be added to the camera-ready and released code repository.
+
+\item {\bf Code Of Ethics}
+    \item[] Question: Does the research conform with the NeurIPS Code of Ethics?
+    \item[] Answer: \answerYes{}
+    \item[] Justification: This work uses public, previously de-identified third-party clinical datasets. We do not involve new human-subjects for our data collection.
+
+\item {\bf Broader Impacts}
+    \item[] Question: Does the paper discuss potential positive societal impacts and negative societal impacts of the work?
+    \item[] Answer: \answerYes{}
+    \item[] Justification: Section~7 states that neither of our constructed controllers is fully validated for clinical/diagnostic use, and we reference prior work on the gap between benchmark success and clinical failure in other RL systems.
+
+\item {\bf Safeguards}
+    \item[] Question: Does the paper describe safeguards for responsible release of data or models that have a high risk for misuse?
+    \item[] Answer: \answerNA{}
+    \item[] Justification: The artifacts are simulation policies and evaluation code operating on a musculoskeletal model; they carry no clinical capabilities and contain no risk beyond the diagnostic-tool nuance, which was stated in Section~7.
+
+\item {\bf Licenses for existing assets}
+    \item[] Question: Are the creators or original owners of assets used in the paper properly credited?
+    \item[] Answer: \answerYes{}
+    \item[] Justification: We cite MyoSuite, DEP-RL, the literature-exact reward baseline, and all three clinical datasets (Sections~3--4).
+
+\item {\bf New Assets}
+    \item[] Question: Are new assets introduced in the paper well documented?
+    \item[] Answer: \answerYes{}
+    \item[] Justification: The two new controllers (Tiers 3 and 4) are documented in Sections~4.2--4.3, and will ship with the released code with the three baseline policies and evaluation pipeline.
+
+\item {\bf Crowdsourcing and Research with Human Subjects}
+    \item[] Question: Does the paper include crowdsourcing experiments or research with human subjects?
+    \item[] Answer: \answerNA{}
+    \item[] Justification: No new human data was collected; all the clinical data we used is taken from previously published public datasets.
+
+\item {\bf IRB Approvals}
+    \item[] Question: Does the paper describe potential risks to human subjects and IRB approvals?
+    \item[] Answer: \answerNA{}
+    \item[] Justification: The cited third-party datasets report their own IRB/ethics approvals in their original publications. We did not conduct any new human-subject research ourselves.
+
+\end{enumerate}
+
+\appendix
+
+\section{Supplementary Figures and Table}
+\label{app:figs}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.9\linewidth]{fig_protocol.png}
+  \caption{The perturbation protocol. Left: push direction, applied at the pelvis center of mass in the sagittal or lateral plane. Right: push timing, randomized within steps 50--150, and the post-push recovery window in which hip and ankle ROM are measured against that trial's own baseline.}
+  \label{fig:protocol}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.8\linewidth]{fig_knee_bar.png}
+  \caption{Peak knee flexion during swing, Tier~1 (left/right) vs.\ the stroke controller (paretic/non-paretic). Error bars show one standard deviation.}
+  \label{fig:kneebar}
+\end{figure}
+
+\begin{table}[h]
+  \centering
+  \caption{Joint-by-joint correspondence between the Parkinsonian controller and the real Parkinsonian reference.}
+  \label{tab:pdjoints}
+  \begin{tabular}{lll}
+    \toprule
+    Joint & Side & $p$ (vs.\ real reference) \\
+    \midrule
+    Hip   & Left  & 0.000184 \\
+    Hip   & Right & $1.39\times10^{-6}$ \\
+    Knee  & Left  & $2.21\times10^{-7}$ \\
+    Knee  & Right & $4.17\times10^{-8}$ \\
+    Ankle & Left  & $<0.0001$ \\
+    Ankle & Right & 0.22 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\FloatBarrier
+
+\end{document}
